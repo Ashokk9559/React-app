@@ -1,7 +1,10 @@
 version: '3'
+
 services:
-  app:
-    image: ashokk9559/dev:latest  # Use your specific image tag here
+  web:
+    image: ${DOCKER_IMAGE:-ashokk9559/prod:latest}  # Use environment variable for image name
     ports:
       - "80:80"
-    restart: always
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}  # Use environment variable for NODE_ENV
+    command: ["npm", "start"]
