@@ -30,9 +30,9 @@ pipeline {
                     def dockerImage
                     try {
                         if (branchName == 'dev') {
-                            dockerImage = docker.build(devRegistry)
+                            dockerImage = docker.build("${devRegistry}:${branchName}")
                         } else if (branchName == 'main' || branchName == 'master') {
-                            dockerImage = docker.build(prodRegistry)
+                            dockerImage = docker.build("${prodRegistry}:${branchName}")
                         } else {
                             error("Unknown branch: ${branchName}")
                         }
@@ -57,7 +57,7 @@ pipeline {
                     // Push Docker image
                     try {
                         docker.withRegistry('https://index.docker.io/v1/', registryCredential) {
-                            docker.image(env.DOCKER_IMAGE).push('latest')
+                            docker.image(env.DOCKER_IMAGE).push()
                         }
                     } catch (Exception e) {
                         error("Failed to push Docker image: ${e.message}")
@@ -70,11 +70,12 @@ pipeline {
                 script {
                     echo "Deploying Docker containers to EC2 (same server)"
 
-                    // Stop and remove any existing containers
+                    // Ensure Docker Compose is up-to-date on EC2
                     sh '''
                         docker-compose down
+                        docker-compose pull
                     '''
-                    
+
                     // Deploy the new image using Docker Compose
                     sh '''
                         docker-compose up -d
