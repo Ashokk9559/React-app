@@ -1,0 +1,16 @@
+# Node modules
+node_modules/
+
+# Logs
+*.log
+
+# Build artifacts
+build/
+dist/
+
+# Environment files
+.env
+
+# Docker files
+.dockerignore
+!docker-compose.yml
