@@ -21,17 +21,17 @@ pipeline {
 
                     // Determine the branch name
                     def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: env.GIT_REF?.split('/')[2] ?: error("Branch name not found")
+                    branchName = branchName.replaceAll('origin/', '') // Remove 'origin/' prefix if present
                     echo "Detected Branch: ${branchName}"
-
-                    // Normalize branch name (remove 'origin/' prefix if present)
-                    branchName = branchName.replaceAll('origin/', '')
 
                     // Build Docker image based on branch
                     def dockerImage
                     try {
                         if (branchName == 'dev') {
+                            echo "Building Docker image for dev branch"
                             dockerImage = docker.build(devRegistry)
                         } else if (branchName == 'main' || branchName == 'master') {
+                            echo "Building Docker image for prod branch"
                             dockerImage = docker.build(prodRegistry)
                         } else {
                             error("Unknown branch: ${branchName}")
@@ -56,6 +56,7 @@ pipeline {
 
                     // Push Docker image
                     try {
+                        echo "Pushing Docker image: ${env.DOCKER_IMAGE}"
                         docker.withRegistry('https://index.docker.io/v1/', registryCredential) {
                             docker.image(env.DOCKER_IMAGE).push('latest')
                         }
@@ -73,7 +74,11 @@ pipeline {
             }
             steps {
                 script {
-                    echo "Deploying Docker containers to EC2 (same server)"
+                    echo "Deploying Docker containers on the same server"
+
+                    // Set environment variables for docker-compose
+                    def dockerImage = (env.BRANCH_NAME == 'dev') ? 'ashokk9559/dev:latest' : 'ashokk9559/prod:latest'
+                    def nodeEnv = (env.BRANCH_NAME == 'dev') ? 'development' : 'production'
 
                     // Stop and remove any existing containers
                     sh '''
@@ -81,9 +86,15 @@ pipeline {
                     '''
                     
                     // Deploy the new image using Docker Compose
-                    sh '''
+                    sh """
+                        export DOCKER_IMAGE=${dockerImage}
+                        export NODE_ENV=${nodeEnv}
                         docker-compose up -d
-                        if [ $? -eq 0 ]; then
+                    """
+
+                    // Verify deployment
+                    sh '''
+                        if docker ps | grep ${DOCKER_IMAGE}; then
                             echo "Docker containers started successfully"
                         else
                             echo "Docker containers failed to start"
