@@ -2,10 +2,9 @@ version: '3'
 
 services:
   web:
-    image: ashokk9559/prod:latest
-    build: .
+    image: ${DOCKER_IMAGE:-ashokk9559/prod:latest}  # Use environment variable for image name
     ports:
       - "80:80"
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}  # Use environment variable for NODE_ENV
     command: ["npm", "start"]
