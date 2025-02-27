@@ -65,6 +65,29 @@ pipeline {
                 }
             }
         }
+        stage('Deploy to EC2') {
+            steps {
+                script {
+                    echo "Deploying Docker containers to EC2 (same server)"
+
+                    // Stop and remove any existing containers
+                    sh '''
+                        docker-compose down
+                    '''
+                    
+                    // Deploy the new image using Docker Compose
+                    sh '''
+                        docker-compose up -d
+                        if [ $? -eq 0 ]; then
+                            echo "Docker containers started successfully"
+                        else
+                            echo "Docker containers failed to start"
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
     }
     post {
         always {
