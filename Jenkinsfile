@@ -4,6 +4,7 @@ pipeline {
         devRegistry = 'ashokk9559/dev'
         prodRegistry = 'ashokk9559/prod'
         registryCredential = 'dockerhub-credentials'
+        appServiceName = 'web'  // Updated to match your Docker Compose file
     }
     stages {
         stage('Checkout') {
@@ -15,11 +16,9 @@ pipeline {
             steps {
                 script {
                     echo "BRANCH_NAME: ${env.BRANCH_NAME}"
-                    echo "GIT_BRANCH: ${env.GIT_BRANCH}"
-                    echo "GIT_REF: ${env.GIT_REF}"
 
-                    // Determine the branch name
-                    def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: env.GIT_REF?.split('/')[2] ?: error("Branch name not found")
+                    // Detect branch
+                    def branchName = env.BRANCH_NAME ?: error("Branch name not found")
                     branchName = branchName.replaceAll('origin/', '')
                     echo "Detected Branch: ${branchName}"
 
@@ -39,7 +38,7 @@ pipeline {
                         error("Failed to build Docker image: ${e.message}")
                     }
 
-                    // Store the Docker image ID for later use
+                    // Store the image ID
                     env.DOCKER_IMAGE = dockerImage.id
                     echo "Built Docker Image ID: ${env.DOCKER_IMAGE}"
                 }
@@ -69,31 +68,34 @@ pipeline {
             }
             steps {
                 script {
-                    echo "Deploying Docker containers on EC2"
+                    echo "Deploying Docker containers on EC2 (without affecting Jenkins)"
 
                     def dockerImage = 'ashokk9559/prod:latest'
                     def nodeEnv = 'production'
 
-                    // Stop and remove existing containers
-                    sh 'docker-compose down'
+                    // Stop only the web application service (not all containers)
+                    sh """
+                        docker-compose stop web
+                        docker-compose rm -f web
+                    """
 
-                    // Deploy the new image
+                    // Deploy new application containers
                     sh """
                         echo "DOCKER_IMAGE=${dockerImage}" > .env
                         echo "NODE_ENV=${nodeEnv}" >> .env
-                        docker-compose up -d
+                        docker-compose up -d web
                     """
 
                     // Verify deployment
-                    sh '''
+                    sh """
                         sleep 5
-                        if docker ps | grep -q "${DOCKER_IMAGE}"; then
+                        if docker ps | grep -q "${dockerImage}"; then
                             echo "Deployment successful"
                         else
                             echo "Deployment failed"
                             exit 1
                         fi
-                    '''
+                    """
                 }
             }
         }
