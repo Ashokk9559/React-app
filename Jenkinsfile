@@ -4,6 +4,7 @@ pipeline {
         devRegistry = 'ashokk9559/dev'
         prodRegistry = 'ashokk9559/prod'
         registryCredential = 'dockerhub-credentials'
+        appServiceName = 'web'  // Updated to match your Docker Compose file
     }
     stages {
         stage('Checkout') {
@@ -14,25 +15,22 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Debug: Print environment variables
                     echo "BRANCH_NAME: ${env.BRANCH_NAME}"
-                    echo "GIT_BRANCH: ${env.GIT_BRANCH}"
-                    echo "GIT_REF: ${env.GIT_REF}"
 
-                    // Determine the branch name
-                    def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: env.GIT_REF?.split('/')[2] ?: error("Branch name not found")
-                    branchName = branchName.replaceAll('origin/', '') // Remove 'origin/' prefix if present
+                    // Detect branch
+                    def branchName = env.BRANCH_NAME ?: error("Branch name not found")
+                    branchName = branchName.replaceAll('origin/', '')
                     echo "Detected Branch: ${branchName}"
 
-                    // Build Docker image based on branch
+                    // Build and tag Docker image
                     def dockerImage
                     try {
                         if (branchName == 'dev') {
                             echo "Building Docker image for dev branch"
-                            dockerImage = docker.build(devRegistry)
-                        } else if (branchName == 'main' || branchName == 'master') {
+                            dockerImage = docker.build("${devRegistry}:latest")
+                        } else if (branchName == 'main') {
                             echo "Building Docker image for prod branch"
-                            dockerImage = docker.build(prodRegistry)
+                            dockerImage = docker.build("${prodRegistry}:latest")
                         } else {
                             error("Unknown branch: ${branchName}")
                         }
@@ -40,21 +38,19 @@ pipeline {
                         error("Failed to build Docker image: ${e.message}")
                     }
 
-                    // Store the Docker image in an environment variable for use in later stages
+                    // Store the image ID
                     env.DOCKER_IMAGE = dockerImage.id
-                    echo "Docker Image ID: ${env.DOCKER_IMAGE}"
+                    echo "Built Docker Image ID: ${env.DOCKER_IMAGE}"
                 }
             }
         }
         stage('Push Docker Image') {
             steps {
                 script {
-                    // Ensure the Docker image is built
                     if (!env.DOCKER_IMAGE) {
                         error("Docker image not found. Build stage might have failed.")
                     }
 
-                    // Push Docker image
                     try {
                         echo "Pushing Docker image: ${env.DOCKER_IMAGE}"
                         docker.withRegistry('https://index.docker.io/v1/', registryCredential) {
@@ -68,39 +64,38 @@ pipeline {
         }
         stage('Deploy to EC2') {
             when {
-                expression { 
-                    return (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master') 
-                }
+                expression { return (env.BRANCH_NAME == 'main') }
             }
             steps {
                 script {
-                    echo "Deploying Docker containers on the same server"
+                    echo "Deploying Docker containers on EC2 (without affecting Jenkins)"
 
-                    // Set environment variables for docker-compose
-                    def dockerImage = (env.BRANCH_NAME == 'dev') ? 'ashokk9559/dev:latest' : 'ashokk9559/prod:latest'
-                    def nodeEnv = (env.BRANCH_NAME == 'dev') ? 'development' : 'production'
+                    def dockerImage = 'ashokk9559/prod:latest'
+                    def nodeEnv = 'production'
 
-                    // Stop and remove any existing containers
-                    sh '''
-                        docker-compose down
-                    '''
-                    
-                    // Deploy the new image using Docker Compose
+                    // Stop only the web application service (not all containers)
                     sh """
-                        export DOCKER_IMAGE=${dockerImage}
-                        export NODE_ENV=${nodeEnv}
-                        docker-compose up -d
+                        docker-compose stop web
+                        docker-compose rm -f web
+                    """
+
+                    // Deploy new application containers
+                    sh """
+                        echo "DOCKER_IMAGE=${dockerImage}" > .env
+                        echo "NODE_ENV=${nodeEnv}" >> .env
+                        docker-compose up -d web
                     """
 
                     // Verify deployment
-                    sh '''
-                        if docker ps | grep ${DOCKER_IMAGE}; then
-                            echo "Docker containers started successfully"
+                    sh """
+                        sleep 5
+                        if docker ps | grep -q "${dockerImage}"; then
+                            echo "Deployment successful"
                         else
-                            echo "Docker containers failed to start"
+                            echo "Deployment failed"
                             exit 1
                         fi
-                    '''
+                    """
                 }
             }
         }
